@@ -27,6 +27,7 @@ Verified Boot 2.0. Usually AVB is used to refer to this codebase.
     + [Persistent Digests](#Persistent-Digests)
     + [Updating Stored Rollback Indexes](#Updating-Stored-Rollback-Indexes)
     + [Recommended Bootflow](#Recommended-Bootflow)
+      + [Booting Into Recovery](#Booting-Into-Recovery)
     + [Handling dm-verity Errors](#Handling-dm_verity-Errors)
     + [Android Specific Integration](#Android-Specific-Integration)
     + [Device Specific Notes](#Device-Specific-Notes)
@@ -163,6 +164,24 @@ data](https://developer.android.com/training/articles/security-key-attestation)
 a relying party can extract the digest and compare it with list of digests for
 known good operating systems which, if found, provides additional assurance
 about the device the application is running on.
+
+For [factory images of Pixel 3 and later
+devices](https://developers.google.com/android/images), the
+`pixel_factory_image_verify.py` located in `tools/transparency` is a convenience
+tool for downloading, verifying and calcuating VBMeta Digests.
+
+    $ pixel_factory_image_verify.py https://dl.google.com/dl/android/aosp/image.zip
+    Fetching file from: https://dl.google.com/dl/android/aosp/image.zip
+    Successfully downloaded file.
+    Successfully unpacked factory image.
+    Successfully unpacked factory image partitions.
+    Successfully verified VBmeta.
+    Successfully calculated VBMeta Digest.
+    The VBMeta Digest for factory image is: 1f329b20a2dd69425e7a29566ca870dad51d2c579311992d41c9ba9ba05e170e
+
+If the given argument is not an URL it considered to be a local file:
+
+    $ pixel_factory_image_verify.py image.zip
 
 # Tools and Libraries
 
@@ -576,8 +595,8 @@ a hash descriptor for `boot.img`, a hashtree descriptor for
 `system.img`, a kernel-cmdline descriptor for setting up `dm-verity`
 for `system.img` and append a hash-tree to `system.img`. If the build
 system is set up such that one or many of `vendor.img` / `product.img`
-/ `odm.img` / `product_services.img` are being built, the hash-tree for
-each of them will also be appended to the image respectively, and their
+/ `system_ext.img` / `odm.img` are being built, the hash-tree for each
+of them will also be appended to the image respectively, and their
 hash-tree descriptors will be included into `vbmeta.img` accordingly.
 
 By default, the algorithm `SHA256_RSA4096` is used with a test key
@@ -605,20 +624,20 @@ Devices can be configured to create additional `vbmeta` partitions as
 partitions without changing the top-level `vbmeta` partition. For example,
 the following variables create `vbmeta_system.img` as a chained `vbmeta`
 image that contains the hash-tree descriptors for `system.img` and
-`product_services.img`. `vbmeta_system.img` itself will be signed by the
-specified key and algorithm.
+`system_ext.img`. `vbmeta_system.img` itself will be signed by the specified
+key and algorithm.
 
-    BOARD_AVB_VBMETA_SYSTEM := system product_services
+    BOARD_AVB_VBMETA_SYSTEM := system system_ext
     BOARD_AVB_VBMETA_SYSTEM_KEY_PATH := external/avb/test/data/testkey_rsa2048.pem
     BOARD_AVB_VBMETA_SYSTEM_ALGORITHM := SHA256_RSA2048
     BOARD_AVB_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION := 1
 
-Note that the hash-tree descriptors for `system.img` and
-`product_services.img` will be included only in `vbmeta_system.img`, but
-not `vbmeta.img`. With the above setup, partitions `system.img`,
-`product_services.img` and `vbmeta_system.img` can be updated
-independently - but as a group - of the rest of the partitions, *or* as
-part of the traditional updates that update all the partitions.
+Note that the hash-tree descriptors for `system.img` and `system_ext.img`
+will be included only in `vbmeta_system.img`, but not `vbmeta.img`. With
+the above setup, partitions `system.img`, `system_ext.img` and
+`vbmeta_system.img` can be updated independently - but as a group - of the
+rest of the partitions, *or* as part of the traditional updates that
+update all the partitions.
 
 Currently build system supports building chained `vbmeta` images of
 `vbmeta_system.img` (`BOARD_AVB_VBMETA_SYSTEM`) and `vbmeta_vendor.img`
@@ -898,6 +917,19 @@ Notes:
       continues. If the device does not have a screen, other ways must
       be used to convey that the device is UNLOCKED (lightbars, LEDs,
       etc.).
+
+### Booting Into Recovery
+
+On Android devices not using A/B, the `recovery` partition usually isn't
+updated along with other partitions and therefore can't be referenced
+from the main `vbmeta` partition.
+
+It's still possible to use AVB to protect this partition (and others)
+by signing these partitions and passing the
+`AVB_SLOT_VERIFY_FLAGS_NO_VBMETA_PARTITION` flag to `avb_slot_verify()`.
+In this mode, the key used to sign each requested partition is verified
+by the `validate_public_key_for_partition()` operation which is also
+used to return the rollback index location to be used.
 
 ## Handling dm-verity Errors
 
